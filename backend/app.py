@@ -1,38 +1,47 @@
-from flask import Flask, request, jsonify
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 import autopep8
 import black
 import yapf
-from flask_cors import CORS
 
-app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
+app = FastAPI()
 
-@app.route('/format', methods=['POST'])
-def format_code():
-    data = request.get_json()
-    python_code = data.get('code', '')
+# Request body structure using Pydantic
+class CodeInput(BaseModel):
+    code: str
+
+@app.post("/format")
+async def format_code(input: CodeInput):
+    python_code = input.code
 
     # Check for syntax validity before formatting
     if not is_valid_syntax(python_code):
-        return jsonify({'error': 'Invalid Python syntax'}), 400
+        raise HTTPException(status_code=400, detail="Syntax Error: Check for indentation or syntax issues")
+
+    original_code = python_code  # Store original code in case of failure
 
     # Step 1: Format the code using autopep8
-    formatted_code = autopep8.fix_code(python_code)
+    try:
+        python_code = autopep8.fix_code(python_code)
+    except Exception as e:
+        print(f"autopep8 failed: {e}")
+        return {"formatted_code": original_code}  # Return original code if any error occurs
 
     # Step 2: Apply Black formatting (handle possible errors)
     try:
-        formatted_code = format_with_black(formatted_code)
+        python_code = format_with_black(python_code)
     except Exception as e:
         print(f"Black formatting failed: {e}")
+        return {"formatted_code": original_code}  # Return original code if any error occurs
 
     # Step 3: Apply YAPF formatting (handle possible errors)
     try:
-        formatted_code = format_with_yapf(formatted_code)
+        python_code = format_with_yapf(python_code)
     except Exception as e:
         print(f"YAPF formatting failed: {e}")
-        return jsonify({'error': f"YAPF formatting failed: {e}"}), 500
+        return {"formatted_code": original_code}  # Return original code if any error occurs
 
-    return jsonify({'formatted_code': formatted_code})
+    return {"formatted_code": python_code}  # Return formatted code if successful
 
 
 def format_with_black(code):
@@ -62,4 +71,5 @@ def is_valid_syntax(code):
 
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    import uvicorn
+    uvicorn.run(app, host="127.0.0.1", port=8000)
